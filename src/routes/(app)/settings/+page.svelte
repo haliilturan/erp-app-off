@@ -41,6 +41,15 @@
       </div>
     </div>
 
+    <a href="/settings/workspaces"
+    class="flex items-center justify-between p-5 hover:bg-slate-50 transition-colors border-b border-slate-100">
+    <div>
+      <h2 class="text-sm font-medium text-slate-900">Çalışma Alanları</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Workspace ve marka yönetimi</p>
+    </div>
+    <span class="text-slate-400">›</span>
+  </a>
+
     <div class="p-5">
       <button
         onclick={() => { authStore.signOut(); goto('/login') }}

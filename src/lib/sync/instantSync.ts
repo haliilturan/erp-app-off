@@ -1,109 +1,151 @@
 import { db } from '$lib/db/instant'
 import { localDb } from '$lib/db/local'
-import { networkStore } from '$lib/stores/network.svelte'
 import { id } from '@instantdb/core'
 
-// Ürünleri InstantDB'den dinle ve local'e yaz
-export function syncProducts(companyId: string) {
-  return db.subscribeQuery(
-    { products: {} },
-    (result) => {
-      if (result.error) { console.error('[sync] products:', result.error); return }
-      if (!result.data?.products) return
-
-      const products = result.data.products
-        .filter((p: any) => p.company_id === companyId)
-
-      localDb.products.bulkPut(
-        products.map((p: any) => ({ ...p, _synced: 1, _deleted: 0 }))
-      )
-    }
+function clean(obj: any) {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([k]) => !k.startsWith('_'))
   )
 }
 
-export function syncCustomers(companyId: string) {
-  return db.subscribeQuery(
-    { customers: {} },
-    (result) => {
-      if (result.error || !result.data?.customers) return
-      const customers = result.data.customers
-        .filter((c: any) => c.company_id === companyId)
-      localDb.customers.bulkPut(
-        customers.map((c: any) => ({ ...c, _synced: 1, _deleted: 0 }))
-      )
-    }
-  )
+// ── Sync functions ──────────────────────────────────
+
+export function syncWorkspaces(userId: string) {
+  return db.subscribeQuery({ workspaces: {} }, (result) => {
+    if (result.error || !result.data?.workspaces) return
+    localDb.workspaces.bulkPut(
+      result.data.workspaces
+        .filter((w: any) => w.created_by === userId)
+        .map((w: any) => ({ ...w, _synced: 1, _deleted: 0 }))
+    )
+  })
 }
 
-export function syncOrders(companyId: string) {
-  return db.subscribeQuery(
-    { orders: { order_items: {} } },
-    (result) => {
-      if (result.error || !result.data?.orders) return
-      const orders = result.data.orders
-        .filter((o: any) => o.company_id === companyId)
-
-      localDb.orders.bulkPut(
-        orders.map((o: any) => ({ ...o, _synced: 1, _deleted: 0 }))
-      )
-
-      const items = orders.flatMap((o: any) => o.order_items ?? [])
-      if (items.length > 0) localDb.order_items.bulkPut(items)
-    }
-  )
+export function syncBrands(workspaceId: string) {
+  return db.subscribeQuery({ brands: {} }, (result) => {
+    if (result.error || !result.data?.brands) return
+    localDb.brands.bulkPut(
+      result.data.brands
+        .filter((b: any) => b.workspace_id === workspaceId)
+        .map((b: any) => ({ ...b, _synced: 1, _deleted: 0 }))
+    )
+  })
 }
 
-// Tüm sync aboneliklerini başlat
-export function startSync(companyId: string) {
+export function syncProducts(workspaceId: string) {
+  return db.subscribeQuery({ products: {} }, (result) => {
+    if (result.error || !result.data?.products) return
+    localDb.products.bulkPut(
+      result.data.products
+        .filter((p: any) => p.workspace_id === workspaceId)
+        .map((p: any) => ({ ...p, _synced: 1, _deleted: 0 }))
+    )
+  })
+}
+
+export function syncCustomers(workspaceId: string) {
+  return db.subscribeQuery({ customers: {} }, (result) => {
+    if (result.error || !result.data?.customers) return
+    localDb.customers.bulkPut(
+      result.data.customers
+        .filter((c: any) => c.workspace_id === workspaceId)
+        .map((c: any) => ({ ...c, _synced: 1, _deleted: 0 }))
+    )
+  })
+}
+
+export function syncOrders(workspaceId: string) {
+  return db.subscribeQuery({ orders: {} }, (result) => {
+    if (result.error || !result.data?.orders) return
+    localDb.orders.bulkPut(
+      result.data.orders
+        .filter((o: any) => o.workspace_id === workspaceId)
+        .map((o: any) => ({ ...o, _synced: 1, _deleted: 0 }))
+    )
+  })
+}
+
+export function syncProposals(workspaceId: string) {
+  return db.subscribeQuery({ proposals: {} }, (result) => {
+    if (result.error || !result.data?.proposals) return
+    localDb.proposals.bulkPut(
+      result.data.proposals
+        .filter((p: any) => p.workspace_id === workspaceId)
+        .map((p: any) => ({ ...p, _synced: 1, _deleted: 0 }))
+    )
+  })
+}
+
+export function startSync(workspaceId: string, userId: string) {
   const unsubs = [
-    syncProducts(companyId),
-    syncCustomers(companyId),
-    syncOrders(companyId),
+    syncWorkspaces(userId),
+    syncBrands(workspaceId),
+    syncProducts(workspaceId),
+    syncCustomers(workspaceId),
+    syncOrders(workspaceId),
+    syncProposals(workspaceId),
   ]
   return () => unsubs.forEach(fn => fn())
 }
 
-// InstantDB'ye veri yaz (online olunca direkt, offline olunca local'de bekler)
-export async function pushProduct(data: any) {
+// ── Push functions ──────────────────────────────────
+
+export async function pushRecord(table: string, data: any) {
   const recordId = data.id ?? id()
   await db.transact(
-    db.tx.products[recordId].update({
-      ...data,
-      id: recordId,
-      updated_at: new Date().toISOString()
-    })
+    (db.tx as any)[table][recordId].update(clean({ ...data, id: recordId }))
   )
   return recordId
 }
 
+export async function pushWorkspace(data: any) {
+  return pushRecord('workspaces', data)
+}
+
+export async function pushBrand(data: any) {
+  return pushRecord('brands', data)
+}
+
+export async function pushProduct(data: any) {
+  return pushRecord('products', data)
+}
+
 export async function pushCustomer(data: any) {
-  const recordId = data.id ?? id()
-  await db.transact(
-    db.tx.customers[recordId].update({ ...data, id: recordId })
-  )
-  return recordId
+  return pushRecord('customers', data)
 }
 
 export async function pushOrder(orderData: any, items: any[]) {
   const orderId = orderData.id ?? id()
-  
-  if (items.length === 0) {
-    await db.transact(
-      db.tx.orders[orderId].update({ ...orderData, id: orderId })
-    )
-    return orderId
-  }
-
   const txns: any[] = [
-    db.tx.orders[orderId].update({ ...orderData, id: orderId })
+    (db.tx as any).orders[orderId].update(clean({ ...orderData, id: orderId }))
   ]
   items.forEach(item => {
     const itemId = item.id ?? id()
     txns.push(
-      db.tx.order_items[itemId].update({ ...item, id: itemId, order_id: orderId })
+      (db.tx as any).order_items[itemId].update(
+        clean({ ...item, id: itemId, order_id: orderId })
+      )
     )
-    txns.push(db.tx.orders[orderId].link({ order_items: itemId }))
   })
   await db.transact(txns)
   return orderId
+}
+
+export async function pushProposal(proposalData: any, items: any[]) {
+  const proposalId = proposalData.id ?? id()
+  const txns: any[] = [
+    (db.tx as any).proposals[proposalId].update(
+      clean({ ...proposalData, id: proposalId })
+    )
+  ]
+  items.forEach(item => {
+    const itemId = item.id ?? id()
+    txns.push(
+      (db.tx as any).proposal_items[itemId].update(
+        clean({ ...item, id: itemId, proposal_id: proposalId })
+      )
+    )
+  })
+  await db.transact(txns)
+  return proposalId
 }

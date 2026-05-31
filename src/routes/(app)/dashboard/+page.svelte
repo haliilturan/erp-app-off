@@ -1,110 +1,148 @@
+<!-- src/routes/(app)/dashboard/+page.svelte -->
 <script lang="ts">
-  import { inventoryService } from '$lib/modules/inventory/service'
-  import { salesService } from '$lib/modules/sales/service'
-  import { liveQuery } from 'dexie'
+  // Gerçek projede InstantDB'den gelecek, şimdilik mock
+  const stats = [
+    { label: 'Toplam Sipariş',  value: '1,284',  change: '+12.5%', up: true  },
+    { label: 'Aktif Müşteri',   value: '342',    change: '+4.2%',  up: true  },
+    { label: 'Stok Uyarısı',    value: '18',     change: '-3',     up: false },
+    { label: 'Aylık Ciro',      value: '$94.2K', change: '+8.1%',  up: true  },
+  ]
 
-  // Canlı istatistikler
-  let stats = $state({
-    totalProducts: 0,
-    lowStock: 0,
-    totalOrders: 0,
-    revenue: 0,
-    totalCustomers: 0,
-    pendingOrders: 0
-  })
+  type Status = 'online' | 'busy' | 'offline'
 
-  $effect(() => {
-    const sub = liveQuery(async () => {
-      const [products, lowStock, customers, orderStats] = await Promise.all([
-        inventoryService.getProducts(),
-        inventoryService.getLowStockProducts(),
-        salesService.getCustomers(),
-        salesService.getOrderStats()
-      ])
-      return {
-        totalProducts: products.length,
-        lowStock: lowStock.length,
-        totalCustomers: customers.length,
-        totalOrders: orderStats.total,
-        revenue: orderStats.revenue,
-        pendingOrders: orderStats.confirmed
-      }
-    }).subscribe({
-      next: (data) => { stats = data },
-      error: (err) => console.error(err)
-    })
-    return () => sub.unsubscribe()
-  })
+  const members = [
+    { id: 1, name: 'Sam Frank',         email: 'sam.frank@hll.int',   role: 'UX Designer',       status: 'online'  as Status, lastActive: '2 mins ago', color: '#3b82f6' },
+    { id: 2, name: 'William Tennessee', email: 'william.t@hll.int',   role: 'Senior Designer',   status: 'busy'    as Status, lastActive: '1 hr ago',   color: '#d29922' },
+    { id: 3, name: 'Emily Smith',       email: 'emily.smith@hll.int', role: 'Creative Director', status: 'offline' as Status, lastActive: '1 day ago',  color: '#8b5cf6' },
+    { id: 4, name: 'Dan Johnson',       email: 'dan.johnson@hll.int', role: 'Graphic Designer',  status: 'online'  as Status, lastActive: 'Just now',   color: '#3fb950' },
+    { id: 5, name: 'Sarah Davis',       email: 'sarah.davis@hll.int', role: 'UX/UI Designer',    status: 'online'  as Status, lastActive: '5 mins ago', color: '#f97316' },
+  ]
 
-  const cards = $derived([
-    {
-      label: 'Toplam Ürün',
-      value: stats.totalProducts,
-      icon: 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
-      color: 'indigo',
-      href: '/inventory'
-    },
-    {
-      label: 'Düşük Stok',
-      value: stats.lowStock,
-      icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
-      color: 'amber',
-      href: '/inventory?filter=lowstock'
-    },
-    {
-      label: 'Toplam Sipariş',
-      value: stats.totalOrders,
-      icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
-      color: 'blue',
-      href: '/sales'
-    },
-    {
-      label: 'Toplam Müşteri',
-      value: stats.totalCustomers,
-      icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z',
-      color: 'green',
-      href: '/sales/customers'
-    },
-  ])
+  function initials(name: string) {
+    return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+  }
 
-  const colorMap: Record<string, string> = {
-    indigo: 'bg-indigo-50 text-indigo-600',
-    amber:  'bg-amber-50 text-amber-600',
-    blue:   'bg-blue-50 text-blue-600',
-    green:  'bg-green-50 text-green-600',
+  let search = $state('')
+  let page   = $state(1)
+
+  const filtered = $derived(
+    members.filter(m =>
+      m.name.toLowerCase().includes(search.toLowerCase()) ||
+      m.email.toLowerCase().includes(search.toLowerCase()) ||
+      m.role.toLowerCase().includes(search.toLowerCase())
+    )
+  )
+
+  const statusLabel: Record<Status, string> = {
+    online: 'Online', busy: 'Busy', offline: 'Offline'
   }
 </script>
 
-<div class="p-6">
-  <div class="mb-6">
-    <h1 class="text-2xl font-semibold text-slate-900">Panel</h1>
-    <p class="text-sm text-slate-500 mt-1">Genel bakış</p>
-  </div>
-
-  <!-- Stat kartları -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    {#each cards as card}
-      <a href={card.href}
-        class="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-sm transition-shadow">
-        <div class="flex items-center justify-between mb-3">
-          <span class="text-sm font-medium text-slate-500">{card.label}</span>
-          <div class="w-9 h-9 rounded-lg {colorMap[card.color]} flex items-center justify-center">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d={card.icon} />
-            </svg>
-          </div>
-        </div>
-        <p class="text-3xl font-semibold text-slate-900">{card.value}</p>
-      </a>
+<div class="erp-page">
+  <!-- Stats -->
+  <div class="erp-stats-grid">
+    {#each stats as s}
+      <div class="erp-stat-card">
+        <span class="erp-stat-label">{s.label}</span>
+        <span class="erp-stat-value">{s.value}</span>
+        <span class="erp-stat-change" class:down={!s.up}>{s.change}</span>
+      </div>
     {/each}
   </div>
 
-  <!-- Gelir kartı -->
-  <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
-    <h2 class="text-sm font-medium text-slate-500 mb-1">Toplam Gelir</h2>
-    <p class="text-3xl font-semibold text-slate-900">
-      {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(stats.revenue)}
-    </p>
-    <p class="text-xs text-slate-400 mt-1">Teslim edilen siparişlerden</p>
+  <!-- Team Members -->
+  <div class="erp-card">
+    <div class="erp-card-header">
+      <span class="erp-card-title">Team Members</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <!-- Search -->
+        <div class="erp-search-wrap">
+          <span class="erp-search-icon">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </span>
+          <input class="erp-input" style="width:190px;" placeholder="Search members..." bind:value={search} />
+        </div>
+        <!-- Add -->
+        <button class="erp-btn erp-btn-primary">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Member
+        </button>
+      </div>
+    </div>
+
+    <table class="erp-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Last Active</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each filtered as m (m.id)}
+          <tr>
+            <td>
+              <div class="erp-user-cell">
+                <div class="erp-user-avatar" style="background:{m.color}">
+                  {initials(m.name)}
+                </div>
+                <div>
+                  <div class="erp-user-name">{m.name}</div>
+                  <div class="erp-user-email">{m.email}</div>
+                </div>
+              </div>
+            </td>
+            <td style="color:var(--text-primary)">{m.role}</td>
+            <td>
+              <span class="erp-badge erp-badge-{m.status}">
+                <span class="erp-dot erp-dot-{m.status}"></span>
+                {statusLabel[m.status]}
+              </span>
+            </td>
+            <td>{m.lastActive}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:4px;">
+                <button class="erp-btn-icon" title="Düzenle">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button class="erp-btn-icon" title="Sil" style="color:var(--status-danger)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        {:else}
+          <tr>
+            <td colspan="5" style="text-align:center;padding:40px;color:var(--text-muted);">
+              Üye bulunamadı
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <!-- Pagination -->
+    <div class="erp-pagination">
+      <span class="erp-pagination-info">Showing 1 to 5 of 24 members</span>
+      <button class="erp-page-btn" disabled={page === 1} onclick={() => page--}>Prev</button>
+      {#each [1, 2, 3] as p}
+        <button class="erp-page-btn" class:active={page === p} onclick={() => page = p}>{p}</button>
+      {/each}
+      <button class="erp-page-btn" disabled>…</button>
+      <button class="erp-page-btn" onclick={() => page = 5}>5</button>
+      <button class="erp-page-btn" onclick={() => page++}>Next</button>
+    </div>
   </div>
 </div>
